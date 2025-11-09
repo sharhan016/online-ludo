@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ludo Game Server Test Client</title>
+  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .container {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      margin-bottom: 20px;
+    }
+    h1 { color: #333; }
+    h2 { color: #666; margin-top: 0; }
+    .alert {
+      padding: 15px;
+      border-radius: 4px;
+      margin-bottom: 15px;
+      border-left: 4px solid #007bff;
+      background: #e7f3ff;
+    }
+    .alert-warning {
+      border-color: #ffc107;
+      background: #fff3cd;
+    }
+    .status {
+      padding: 10px;
+      border-radius: 4px;
+      margin-bottom: 15px;
+      font-weight: bold;
+    }
+    .connected { background: #d4edda; color: #155724; }
+    .disconnected { background: #f8d7da; color: #721c24; }
+    .controls {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+    .control-group {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    label {
+      font-weight: bold;
+      color: #555;
+      font-size: 14px;
+    }
+    input, select, button {
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    button {
+      background: #007bff;
+      color: white;
+      border: none;
+      cursor: pointer;
+      font-weight: bold;
+      transition: background 0.2s;
+    }
+    button:hover { background: #0056b3; }
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    .btn-success {
+      background: #28a745;
+    }
+    .btn-success:hover {
+      background: #218838;
+    }
+    .log {
+      background: #1e1e1e;
+      color: #d4d4d4;
+      padding: 15px;
+      border-radius: 4px;
+      max-height: 400px;
+      overflow-y: auto;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+    }
+    .log-entry {
+      margin-bottom: 8px;
+      padding: 4px;
+      border-left: 3px solid #007bff;
+      padding-left: 8px;
+    }
+    .log-entry.error { border-color: #dc3545; color: #ff6b6b; }
+    .log-entry.success { border-color: #28a745; color: #51cf66; }
+    .log-entry.info { border-color: #17a2b8; color: #4dabf7; }
+    .log-entry.warning { border-color: #ffc107; color: #ffd43b; }
+    .clear-btn {
+      background: #dc3545;
+      margin-top: 10px;
+    }
+    .clear-btn:hover { background: #c82333; }
+    .game-info {
+      background: #e7f3ff;
+      padding: 10px;
+      border-radius: 4px;
+      margin-bottom: 15px;
+      font-size: 14px;
+    }
+    .game-info strong {
+      color: #007bff;
+    }
+    ol {
+      margin: 10px 0;
+      padding-left: 20px;
+    }
+    ol li {
+      margin: 5px 0;
+    }
+    code {
+      background: #f4f4f4;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-family: 'Courier New', monospace;
+    }
+  </style>
+</head>
+<body>
+  <h1>🎲 Ludo Game Server Test Client</h1>
+
+  <div class="container">
+    <div class="alert alert-warning">
+      <strong>⚠️ Important:</strong> The game requires at least 2 players to start. 
+      <br><br>
+      <strong>Testing Instructions:</strong>
+      <ol>
+        <li>Open this page in <strong>TWO browser tabs</strong> (or use incognito mode for the second tab)</li>
+        <li><strong>Tab 1 (Player 1):</strong> Create a room and note the room code</li>
+        <li><strong>Tab 2 (Player 2):</strong> Join the room using the room code</li>
+        <li><strong>Tab 1:</strong> Click "Start Game" (only the host can start)</li>
+        <li><strong>Tab 1:</strong> Roll dice and move tokens</li>
+      </ol>
+    </div>
+  </div>
+
+  <div class="container">
+    <h2>Connection Status</h2>
+    <div id="status" class="status disconnected">Disconnected</div>
+    <div class="controls">
+      <div class="control-group">
+        <label>Server URL:</label>
+        <input type="text" id="serverUrl" value="http://localhost:3000">
+      </div>
+      <div class="control-group">
+        <button id="connectBtn" onclick="connect()">Connect</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="container">
+    <h2>Player Configuration</h2>
+    <div class="controls">
+      <div class="control-group">
+        <label>Player ID:</label>
+        <input type="text" id="playerId" value="">
+        <small style="color: #666;">Auto-generated if empty</small>
+      </div>
+      <div class="control-group">
+        <label>Player Name:</label>
+        <input type="text" id="playerName" value="">
+        <small style="color: #666;">e.g., Alice, Bob</small>
+      </div>
+      <div class="control-group">
+        <label>Room Code:</label>
+        <input type="text" id="roomCode" value="" placeholder="Enter to join existing room">
+      </div>
+    </div>
+  </div>
+
+  <div class="container">
+    <h2>Room Actions</h2>
+    <div class="game-info" id="gameInfo" style="display: none;">
+      <strong>Current Room:</strong> <span id="currentRoom">-</span><br>
+      <strong>Players:</strong> <span id="playerCount">0</span><br>
+      <strong>Status:</strong> <span id="gameStatus">-</span>
+    </div>
+    <div class="controls">
+      <button class="btn-success" onclick="createRoom()">1️⃣ Create Room (Player 1)</button>
+      <button onclick="joinRoom()">2️⃣ Join Room (Player 2)</button>
+      <button onclick="startGame()">3️⃣ Start Game (Host Only)</button>
+    </div>
+  </div>
+
+  <div class="container">
+    <h2>Game Actions</h2>
+    <div class="alert" style="background: #fff3cd; border-color: #ffc107;">
+      <strong>💡 Tip:</strong> You need to roll a <strong>6</strong> to move a token out of base. 
+      Keep rolling until you get a 6, then move the token to position <code>B04</code> (for Blue), 
+      <code>G21</code> (for Green), <code>R10</code> (for Red), or <code>Y42</code> (for Yellow).
+    </div>
+    <div class="controls">
+      <button onclick="rollDice()">🎲 Roll Dice</button>
+    </div>
+    <div class="controls">
+      <div class="control-group">
+        <label>Token ID:</label>
+        <select id="tokenId">
+          <option value="BT1">Blue Token 1 (BT1)</option>
+          <option value="BT2">Blue Token 2 (BT2)</option>
+          <option value="BT3">Blue Token 3 (BT3)</option>
+          <option value="BT4">Blue Token 4 (BT4)</option>
+          <option value="GT1">Green Token 1 (GT1)</option>
+          <option value="GT2">Green Token 2 (GT2)</option>
+          <option value="RT1">Red Token 1 (RT1)</option>
+          <option value="RT2">Red Token 2 (RT2)</option>
+          <option value="YT1">Yellow Token 1 (YT1)</option>
+          <option value="YT2">Yellow Token 2 (YT2)</option>
+        </select>
+      </div>
+      <div class="control-group">
+        <label>Target Position:</label>
+        <input type="text" id="targetPosition" value="B04" placeholder="e.g., B04, G21, R10">
+        <small style="color: #666;">Start positions: B04, G21, R10, Y42</small>
+      </div>
+      <button onclick="moveToken()">🎯 Move Token</button>
+    </div>
+  </div>
+
+  <div class="container">
+    <h2>Event Log</h2>
+    <div id="log" class="log"></div>
+    <button class="clear-btn" onclick="clearLog()">Clear Log</button>
+  </div>
+
+  <script>
+    let socket = null;
+    let currentRoomCode = null;
+    let currentPlayerId = null;
+
+    // Generate random player ID and name if not provided
+    function generatePlayerId() {
+      return 'player-' + Math.random().toString(36).substr(2, 9);
+    }
+
+    function generatePlayerName() {
+      const names = ['Alice', 'Bob', 'Charlie', 'Diana', 'Eve', 'Frank'];
+      return names[Math.floor(Math.random() * names.length)];
+    }
+
+    // Initialize player info
+    window.onload = () => {
+      document.getElementById('playerId').value = generatePlayerId();
+      document.getElementById('playerName').value = generatePlayerName();
+      log('Test client loaded. Click Connect to start.', 'info');
+      log('Remember: Open this page in TWO tabs to test multiplayer!', 'warning');
+    };
+
+    function log(message, type = 'info') {
+      const logDiv = document.getElementById('log');
+      const entry = document.createElement('div');
+      entry.className = `log-entry ${type}`;
+      const timestamp = new Date().toLocaleTimeString();
+      entry.textContent = `[${timestamp}] ${message}`;
+      logDiv.appendChild(entry);
+      logDiv.scrollTop = logDiv.scrollHeight;
+    }
+
+    function clearLog() {
+      document.getElementById('log').innerHTML = '';
+    }
+
+    function updateStatus(connected) {
+      const statusDiv = document.getElementById('status');
+      const connectBtn = document.getElementById('connectBtn');
+      
+      if (connected) {
+        statusDiv.textContent = `Connected (Socket ID: ${socket.id})`;
+        statusDiv.className = 'status connected';
+        connectBtn.textContent = 'Disconnect';
+        connectBtn.onclick = disconnect;
+      } else {
+        statusDiv.textContent = 'Disconnected';
+        statusDiv.className = 'status disconnected';
+        connectBtn.textContent = 'Connect';
+        connectBtn.onclick = connect;
+      }
+    }
+
+    function updateGameInfo(roomCode, playerCount, status) {
+      const gameInfo = document.getElementById('gameInfo');
+      gameInfo.style.display = 'block';
+      document.getElementById('currentRoom').textContent = roomCode || '-';
+      document.getElementById('playerCount').textContent = playerCount || 0;
+      document.getElementById('gameStatus').textContent = status || '-';
+    }
+
+    function connect() {
+      const serverUrl = document.getElementById('serverUrl').value;
+      
+      socket = io(serverUrl, {
+        transports: ['websocket', 'polling'],
+      });
+
+      socket.on('connect', () => {
+        log('✅ Connected to server', 'success');
+        updateStatus(true);
+      });
+
+      socket.on('disconnect', () => {
+        log('❌ Disconnected from server', 'error');
+        updateStatus(false);
+      });
+
+      socket.on('error', (error) => {
+        log(`❌ Error: ${JSON.stringify(error)}`, 'error');
+      });
+
+      socket.on('room_created', (data) => {
+        currentRoomCode = data.room.roomCode;
+        currentPlayerId = document.getElementById('playerId').value;
+        document.getElementById('roomCode').value = currentRoomCode;
+        log(`🏠 Room created: ${currentRoomCode}`, 'success');
+        log(`📋 Share this room code with Player 2: ${currentRoomCode}`, 'warning');
+        updateGameInfo(currentRoomCode, data.room.players.length, data.room.status);
+      });
+
+      socket.on('player_joined', (data) => {
+        log(`👤 Player joined: ${data.player.playerName}`, 'success');
+        log(`👥 Total players: ${data.room.players.length}`, 'info');
+        updateGameInfo(data.room.roomCode, data.room.players.length, data.room.status);
+        
+        if (data.room.players.length >= 2) {
+          log(`✅ Enough players! Host can now start the game.`, 'success');
+        }
+      });
+
+      socket.on('game_started', (data) => {
+        log(`🎮 Game started!`, 'success');
+        log(`🎯 Current turn: ${data.gameState.players[data.gameState.currentPlayerIndex].playerName}`, 'info');
+        updateGameInfo(currentRoomCode, data.gameState.players.length, 'playing');
+      });
+
+      socket.on('dice_rolled', (data) => {
+        log(`🎲 Dice rolled: ${data.diceValue}`, 'info');
+        if (data.skipTurn) {
+          log(`⚠️ Three consecutive sixes! Turn skipped.`, 'warning');
+        } else if (data.diceValue === 6) {
+          log(`🎉 You rolled a 6! You can move a token out of base or get an extra turn.`, 'success');
+        }
+      });
+
+      socket.on('token_moved', (data) => {
+        log(`🎯 Token moved: ${data.tokenId} from ${data.fromPosition} to ${data.toPosition}`, 'success');
+        if (data.capturedTokenId) {
+          log(`💥 Captured opponent's token: ${data.capturedTokenId}`, 'warning');
+        }
+      });
+
+      socket.on('game_state_update', (data) => {
+        const currentPlayer = data.players[data.currentPlayerIndex];
+        log(`📊 Game state updated - Current turn: ${currentPlayer.playerName} (${currentPlayer.color})`, 'info');
+        log(`   Phase: ${data.phase}, Dice: ${data.diceValue || 'not rolled'}`, 'info');
+      });
+    }
+
+    function disconnect() {
+      if (socket) {
+        socket.close();
+        socket = null;
+        updateStatus(false);
+        log('Connection closed', 'info');
+      }
+    }
+
+    function createRoom() {
+      if (!socket) {
+        log('❌ Not connected to server', 'error');
+        return;
+      }
+
+      const playerId = document.getElementById('playerId').value || generatePlayerId();
+      const playerName = document.getElementById('playerName').value || generatePlayerName();
+
+      document.getElementById('playerId').value = playerId;
+      document.getElementById('playerName').value = playerName;
+
+      const data = {
+        playerId,
+        playerName,
+        preferredPlayers: 2,
+      };
+
+      log(`📤 Creating room as ${playerName}...`, 'info');
+      socket.emit('create_room', data);
+    }
+
+    function joinRoom() {
+      if (!socket) {
+        log('❌ Not connected to server', 'error');
+        return;
+      }
+
+      const roomCode = document.getElementById('roomCode').value;
+      if (!roomCode) {
+        log('❌ Please enter a room code', 'error');
+        return;
+      }
+
+      const playerId = document.getElementById('playerId').value || generatePlayerId();
+      const playerName = document.getElementById('playerName').value || generatePlayerName();
+
+      document.getElementById('playerId').value = playerId;
+      document.getElementById('playerName').value = playerName;
+
+      const data = {
+        roomCode,
+        playerId,
+        playerName,
+      };
+
+      log(`📤 Joining room ${roomCode} as ${playerName}...`, 'info');
+      socket.emit('join_room', data);
+      currentRoomCode = roomCode;
+      currentPlayerId = playerId;
+    }
+
+    function startGame() {
+      if (!socket) {
+        log('❌ Not connected to server', 'error');
+        return;
+      }
+
+      const roomCode = currentRoomCode || document.getElementById('roomCode').value;
+      const playerId = currentPlayerId || document.getElementById('playerId').value;
+
+      if (!roomCode) {
+        log('❌ No room code. Create or join a room first.', 'error');
+        return;
+      }
+
+      const data = {
+        roomCode,
+        playerId,
+      };
+
+      log(`📤 Starting game in room ${roomCode}...`, 'info');
+      socket.emit('start_game', data);
+    }
+
+    function rollDice() {
+      if (!socket) {
+        log('❌ Not connected to server', 'error');
+        return;
+      }
+
+      const roomCode = currentRoomCode || document.getElementById('roomCode').value;
+      const playerId = currentPlayerId || document.getElementById('playerId').value;
+
+      if (!roomCode) {
+        log('❌ No room code. Create or join a room first.', 'error');
+        return;
+      }
+
+      const data = {
+        roomCode,
+        playerId,
+      };
+
+      log(`📤 Rolling dice...`, 'info');
+      socket.emit('roll_dice', data);
+    }
+
+    function moveToken() {
+      if (!socket) {
+        log('❌ Not connected to server', 'error');
+        return;
+      }
+
+      const roomCode = currentRoomCode || document.getElementById('roomCode').value;
+      const playerId = currentPlayerId || document.getElementById('playerId').value;
+
+      if (!roomCode) {
+        log('❌ No room code. Create or join a room first.', 'error');
+        return;
+      }
+
+      const data = {
+        roomCode,
+        playerId,
+        tokenId: document.getElementById('tokenId').value,
+        targetPositionId: document.getElementById('targetPosition').value,
+      };
+
+      log(`📤 Moving token ${data.tokenId} to ${data.targetPositionId}...`, 'info');
+      socket.emit('move_token', data);
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ludo Game - Complete Test Client</title>
+  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #f5f5f5;
+      padding: 20px;
+    }
+    .container {
+      max-width: 1800px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 650px 1fr;
+      gap: 20px;
+    }
+    .section {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    h1 { font-size: 24px; margin-bottom: 15px; color: #333; }
+    h2 { font-size: 18px; margin-bottom: 10px; color: #666; }
+    
+    /* Ludo Board - Simplified visual representation */
+    .board-container {
+      width: 600px;
+      height: 600px;
+      margin: 0 auto 20px;
+      position: relative;
+      background: white;
+      border: 3px solid #333;
+      display: grid;
+      grid-template-columns: 40% 20% 40%;
+      grid-template-rows: 40% 20% 40%;
+    }
+    
+    .home-area {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 48px;
+      font-weight: bold;
+      position: relative;
+    }
+    .home-area.red { background: linear-gradient(135deg, #ff5b5b 0%, #ffcccb 100%); }
+    .home-area.green { background: linear-gradient(135deg, #41b06e 0%, #c8e6c9 100%); }
+    .home-area.blue { background: linear-gradient(135deg, #0d92f4 0%, #bbdefb 100%); }
+    .home-area.yellow { background: linear-gradient(135deg, #ffd966 0%, #fff9c4 100%); }
+    
+    .path-area {
+      background: #f0f0f0;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .path-area.center {
+      background: linear-gradient(45deg, #ff5b5b 0%, #41b06e 25%, #0d92f4 50%, #ffd966 75%, #ff5b5b 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 36px;
+      color: white;
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+    }
+    
+    .token-on-board {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      border: 3px solid #333;
+      position: absolute;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: bold;
+      color: white;
+      text-shadow: 0 0 2px rgba(0,0,0,0.5);
+      z-index: 100;
+      transition: all 0.3s ease;
+      cursor: pointer;
+    }
+    .token-on-board:hover { transform: scale(1.1); }
+    .token-on-board.blue { background: #0d92f4; }
+    .token-on-board.green { background: #41b06e; }
+    .token-on-board.red { background: #ff5b5b; }
+    .token-on-board.yellow { background: #ffd966; color: #333; }
+    
+    /* Token Cards */
+    .tokens-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 10px;
+      margin-top: 15px;
+    }
+    .token-card {
+      border: 2px solid #ddd;
+      border-radius: 8px;
+      padding: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+      background: white;
+    }
+    .token-card:hover { transform: scale(1.02); box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+    .token-card.selected { border-color: #007bff; background: #e7f3ff; }
+    .token-card.disabled { opacity: 0.5; cursor: not-allowed; }
+    .token-card.disabled:hover { transform: none; }
+    .token-card.blue { border-left: 4px solid #0d92f4; }
+    .token-card.green { border-left: 4px solid #41b06e; }
+    .token-card.red { border-left: 4px solid #ff5b5b; }
+    .token-card.yellow { border-left: 4px solid #ffd966; }
+    .token-id { font-weight: bold; font-size: 16px; margin-bottom: 5px; }
+    .token-pos { color: #666; font-size: 14px; }
+    
+    /* Controls */
+    .status {
+      padding: 10px;
+      border-radius: 4px;
+      margin-bottom: 15px;
+      font-weight: bold;
+    }
+    .connected { background: #d4edda; color: #155724; }
+    .disconnected { background: #f8d7da; color: #721c24; }
+    
+    .game-info {
+      background: #e7f3ff;
+      padding: 15px;
+      border-radius: 4px;
+      margin-bottom: 15px;
+      font-size: 14px;
+    }
+    .game-info div { margin: 5px 0; }
+    
+    input, button {
+      width: 100%;
+      padding: 10px;
+      margin-bottom: 10px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    button {
+      background: #007bff;
+      color: white;
+      border: none;
+      cursor: pointer;
+      font-weight: bold;
+    }
+    button:hover { background: #0056b3; }
+    button.success { background: #28a745; }
+    button.success:hover { background: #218838; }
+    
+    .dice-display {
+      font-size: 48px;
+      text-align: center;
+      padding: 20px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border-radius: 8px;
+      margin: 15px 0;
+    }
+    
+    .alert {
+      padding: 12px;
+      border-radius: 4px;
+      margin-bottom: 15px;
+      border-left: 4px solid #007bff;
+      background: #e7f3ff;
+      font-size: 14px;
+    }
+    .alert-warning { border-color: #ffc107; background: #fff3cd; }
+    .alert-success { border-color: #28a745; background: #d4edda; }
+    
+    .log {
+      background: #1e1e1e;
+      color: #d4d4d4;
+      padding: 10px;
+      border-radius: 4px;
+      max-height: 200px;
+      overflow-y: auto;
+      font-family: 'Courier New', monospace;
+      font-size: 11px;
+      margin-top: 15px;
+    }
+    .log-entry {
+      margin-bottom: 4px;
+      padding: 2px;
+      border-left: 3px solid #007bff;
+      padding-left: 6px;
+    }
+    .log-entry.error { border-color: #dc3545; color: #ff6b6b; }
+    .log-entry.success { border-color: #28a745; color: #51cf66; }
+    .log-entry.warning { border-color: #ffc107; color: #ffd43b; }
+    
+    .position-indicator {
+      position: absolute;
+      font-size: 10px;
+      color: #666;
+      background: rgba(255,255,255,0.8);
+      padding: 2px 4px;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Board Section -->
+    <div class="section">
+      <h1>🎲 Ludo Board (Visual Reference)</h1>
+      <div class="board-container" id="boardContainer">
+        <div class="home-area red">🏠</div>
+        <div class="path-area"></div>
+        <div class="home-area green">🏠</div>
+        <div class="path-area"></div>
+        <div class="path-area center">🎲</div>
+        <div class="path-area"></div>
+        <div class="home-area blue">🏠</div>
+        <div class="path-area"></div>
+        <div class="home-area yellow">🏠</div>
+      </div>
+      <div style="text-align: center; color: #666; font-size: 14px;">
+        <p>Tokens are shown on the board in real-time</p>
+        <p>Click tokens below to move them</p>
+      </div>
+    </div>
+
+    <!-- Controls Section -->
+    <div class="section">
+      <h1>Game Controls</h1>
+      
+      <div id="status" class="status disconnected">Disconnected</div>
+      
+      <input type="text" id="serverUrl" value="http://localhost:3000" placeholder="Server URL">
+      <input type="text" id="playerName" placeholder="Your Name">
+      <input type="text" id="roomCode" placeholder="Room Code">
+      
+      <button onclick="connect()">Connect</button>
+      <button class="success" onclick="createRoom()">Create Room</button>
+      <button onclick="joinRoom()">Join Room</button>
+      <button onclick="startGame()">Start Game</button>
+      
+      <div id="gameInfo" class="game-info" style="display: none;">
+        <div><strong>Room:</strong> <span id="currentRoom">-</span></div>
+        <div><strong>Your Color:</strong> <span id="yourColor">-</span></div>
+        <div><strong>Current Turn:</strong> <span id="currentTurn">-</span></div>
+        <div><strong>Phase:</strong> <span id="gamePhase">-</span></div>
+      </div>
+      
+      <div id="diceDisplay" class="dice-display" style="display: none;">
+        🎲 <span id="diceValue">-</span>
+      </div>
+      
+      <button class="success" onclick="rollDice()" style="font-size: 18px;">🎲 Roll Dice</button>
+      
+      <h2>Your Tokens (Click to Move)</h2>
+      <div id="tokenAlert" class="alert" style="display: none;"></div>
+      <div id="tokensGrid" class="tokens-grid">
+        <p style="color: #666;">Connect and start a game to see your tokens</p>
+      </div>
+      
+      <div class="log" id="log"></div>
+    </div>
+  </div>
+
+  <script>
+    let socket = null;
+    let currentRoomCode = null;
+    let currentPlayerId = null;
+    let currentPlayerColor = null;
+    let gameState = null;
+    let selectedToken = null;
+    let lastDiceValue = null;
+
+    // Position mapping for visual board (simplified)
+    const positionToCoords = {
+      // Red home
+      'R1': { x: 15, y: 15 }, 'R2': { x: 35, y: 15 }, 'R3': { x: 15, y: 35 }, 'R4': { x: 35, y: 35 },
+      // Green home
+      'G1': { x: 565, y: 15 }, 'G2': { x: 545, y: 15 }, 'G3': { x: 565, y: 35 }, 'G4': { x: 545, y: 35 },
+      // Blue home
+      'B1': { x: 15, y: 565 }, 'B2': { x: 35, y: 565 }, 'B3': { x: 15, y: 545 }, 'B4': { x: 35, y: 545 },
+      // Yellow home
+      'Y1': { x: 565, y: 565 }, 'Y2': { x: 545, y: 565 }, 'Y3': { x: 565, y: 545 }, 'Y4': { x: 545, y: 545 },
+      // Paths (simplified - just show tokens moving around)
+      'R10': { x: 50, y: 300 }, 'R20': { x: 100, y: 300 }, 'R30': { x: 150, y: 300 }, 'R40': { x: 200, y: 300 }, 'R50': { x: 240, y: 300 },
+      'G21': { x: 300, y: 50 }, 'G22': { x: 300, y: 100 }, 'G23': { x: 300, y: 150 }, 'G24': { x: 300, y: 200 }, 'G25': { x: 300, y: 240 },
+      'B04': { x: 300, y: 550 }, 'B03': { x: 300, y: 500 }, 'B02': { x: 300, y: 450 }, 'B01': { x: 300, y: 400 }, 'B00': { x: 300, y: 360 },
+      'Y42': { x: 550, y: 300 }, 'Y32': { x: 500, y: 300 }, 'Y22': { x: 450, y: 300 }, 'Y12': { x: 400, y: 300 }, 'Y02': { x: 360, y: 300 },
+    };
+
+    function generateId() {
+      return 'player-' + Math.random().toString(36).substr(2, 9);
+    }
+
+    function generateName() {
+      const names = ['Alice', 'Bob', 'Charlie', 'Diana'];
+      return names[Math.floor(Math.random() * names.length)];
+    }
+
+    function log(message, type = 'info') {
+      const logDiv = document.getElementById('log');
+      const entry = document.createElement('div');
+      entry.className = `log-entry ${type}`;
+      entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+      logDiv.appendChild(entry);
+      logDiv.scrollTop = logDiv.scrollHeight;
+    }
+
+    function updateStatus(connected) {
+      const statusDiv = document.getElementById('status');
+      statusDiv.textContent = connected ? '✅ Connected' : '❌ Disconnected';
+      statusDiv.className = connected ? 'status connected' : 'status disconnected';
+    }
+
+    function updateGameInfo() {
+      if (!gameState) return;
+      
+      document.getElementById('gameInfo').style.display = 'block';
+      document.getElementById('currentRoom').textContent = currentRoomCode;
+      
+      const myPlayer = gameState.players.find(p => p.playerId === currentPlayerId);
+      if (myPlayer) {
+        currentPlayerColor = myPlayer.color;
+        document.getElementById('yourColor').textContent = myPlayer.color;
+      }
+      
+      const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+      const isMyTurn = currentPlayer.playerId === currentPlayerId;
+      document.getElementById('currentTurn').textContent = 
+        isMyTurn ? '🎯 YOUR TURN!' : `${currentPlayer.color}`;
+      
+      document.getElementById('gamePhase').textContent = gameState.phase;
+      
+      if (gameState.diceValue) {
+        document.getElementById('diceDisplay').style.display = 'block';
+        document.getElementById('diceValue').textContent = gameState.diceValue;
+        lastDiceValue = gameState.diceValue;
+      }
+      
+      renderTokensOnBoard();
+      renderTokenCards();
+    }
+
+    function renderTokensOnBoard() {
+      if (!gameState) return;
+      
+      // Clear existing tokens on board
+      document.querySelectorAll('.token-on-board').forEach(t => t.remove());
+      
+      const board = document.getElementById('boardContainer');
+      
+      for (const [color, tokens] of Object.entries(gameState.tokenPositions)) {
+        tokens.forEach(token => {
+          const coords = positionToCoords[token.positionId];
+          if (!coords) return; // Position not in our simplified map
+          
+          const tokenEl = document.createElement('div');
+          tokenEl.className = `token-on-board ${color.toLowerCase()}`;
+          tokenEl.textContent = token.tokenId.substr(-1);
+          tokenEl.style.left = coords.x + 'px';
+          tokenEl.style.top = coords.y + 'px';
+          
+          board.appendChild(tokenEl);
+        });
+      }
+    }
+
+    function renderTokenCards() {
+      if (!gameState || !currentPlayerColor) return;
+      
+      const tokensGrid = document.getElementById('tokensGrid');
+      const tokenAlert = document.getElementById('tokenAlert');
+      const myTokens = gameState.tokenPositions[currentPlayerColor] || [];
+      const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+      const isMyTurn = currentPlayer.playerId === currentPlayerId;
+      const canMove = isMyTurn && gameState.phase === 'moving' && lastDiceValue;
+      
+      if (canMove) {
+        tokenAlert.style.display = 'block';
+        tokenAlert.className = 'alert alert-success';
+        tokenAlert.textContent = `🎯 You rolled a ${lastDiceValue}! Click a token to move it.`;
+      } else if (isMyTurn && gameState.phase === 'rolling') {
+        tokenAlert.style.display = 'block';
+        tokenAlert.className = 'alert alert-warning';
+        tokenAlert.textContent = '🎲 Roll the dice to continue!';
+      } else {
+        tokenAlert.style.display = 'none';
+      }
+      
+      tokensGrid.innerHTML = '';
+      
+      myTokens.forEach(token => {
+        const card = document.createElement('div');
+        card.className = `token-card ${currentPlayerColor.toLowerCase()}`;
+        
+        if (canMove) {
+          card.onclick = () => selectToken(token);
+          if (selectedToken && selectedToken.tokenId === token.tokenId) {
+            card.classList.add('selected');
+          }
+        } else {
+          card.classList.add('disabled');
+        }
+        
+        const isInBase = token.positionId.length === 2 && !token.positionId.endsWith('F');
+        const isInHome = token.positionId.endsWith('F');
+        
+        let status = '📍 On Board';
+        if (isInBase) status = '🏠 In Base';
+        if (isInHome) status = '🏁 Finished';
+        
+        card.innerHTML = `
+          <div class="token-id">${token.tokenId}</div>
+          <div class="token-pos">${status}</div>
+          <div class="token-pos">Position: ${token.positionId}</div>
+        `;
+        
+        tokensGrid.appendChild(card);
+      });
+    }
+
+    function selectToken(token) {
+      selectedToken = token;
+      renderTokenCards();
+      moveToken(token);
+    }
+
+    function connect() {
+      if (socket && socket.connected) {
+        socket.close();
+        socket = null;
+        updateStatus(false);
+        return;
+      }
+      
+      currentPlayerId = generateId();
+      socket = io(document.getElementById('serverUrl').value, {
+        transports: ['websocket', 'polling'],
+      });
+
+      socket.on('connect', () => {
+        log('✅ Connected', 'success');
+        updateStatus(true);
+      });
+
+      socket.on('disconnect', () => {
+        log('❌ Disconnected', 'error');
+        updateStatus(false);
+      });
+
+      socket.on('error', (error) => {
+        log(`❌ ${error.message}`, 'error');
+      });
+
+      socket.on('room_created', (data) => {
+        currentRoomCode = data.room.roomCode;
+        document.getElementById('roomCode').value = currentRoomCode;
+        log(`🏠 Room: ${currentRoomCode}`, 'success');
+      });
+
+      socket.on('player_joined', (data) => {
+        log(`👤 Player joined (${data.room.players.length})`, 'success');
+      });
+
+      socket.on('ready_to_start', () => {
+        log(`✅ Ready to start!`, 'success');
+      });
+
+      socket.on('game_started', (data) => {
+        gameState = data.gameState;
+        log(`🎮 Game started!`, 'success');
+        updateGameInfo();
+      });
+
+      socket.on('dice_rolled', (data) => {
+        log(`🎲 Dice: ${data.diceValue}`, 'info');
+        if (data.skipTurn) {
+          log(`⏭️ No valid moves, turn skipped`, 'warning');
+        }
+      });
+
+      socket.on('token_moved', (data) => {
+        log(`🎯 ${data.tokenId}: ${data.fromPosition} → ${data.toPosition}`, 'success');
+        if (data.capturedTokenId) {
+          log(`💥 CAPTURED: ${data.capturedTokenId}!`, 'warning');
+        }
+        selectedToken = null;
+        lastDiceValue = null;
+      });
+
+      socket.on('game_state_update', (data) => {
+        gameState = data;
+        updateGameInfo();
+      });
+    }
+
+    function createRoom() {
+      if (!socket) return;
+      const name = document.getElementById('playerName').value || generateName();
+      socket.emit('create_room', {
+        playerId: currentPlayerId,
+        playerName: name,
+        preferredPlayers: 2,
+      });
+    }
+
+    function joinRoom() {
+      if (!socket) return;
+      const roomCode = document.getElementById('roomCode').value;
+      const name = document.getElementById('playerName').value || generateName();
+      currentRoomCode = roomCode;
+      socket.emit('join_room', {
+        roomCode,
+        playerId: currentPlayerId,
+        playerName: name,
+      });
+    }
+
+    function startGame() {
+      if (!socket || !currentRoomCode) return;
+      socket.emit('start_game', {
+        roomCode: currentRoomCode,
+        playerId: currentPlayerId,
+      });
+    }
+
+    function rollDice() {
+      if (!socket || !currentRoomCode) return;
+      socket.emit('roll_dice', {
+        roomCode: currentRoomCode,
+        playerId: currentPlayerId,
+      });
+    }
+
+    function moveToken(token) {
+      if (!socket || !lastDiceValue) return;
+      
+      const targetPosition = calculateTargetPosition(token.positionId, lastDiceValue, currentPlayerColor);
+      if (!targetPosition) {
+        log(`❌ Cannot move ${token.tokenId}`, 'error');
+        return;
+      }
+      
+      socket.emit('move_token', {
+        roomCode: currentRoomCode,
+        playerId: currentPlayerId,
+        tokenId: token.tokenId,
+        targetPositionId: targetPosition,
+      });
+    }
+
+    function calculateTargetPosition(currentPos, diceValue, color) {
+      const isInBase = currentPos.length === 2 && !currentPos.endsWith('F');
+      if (isInBase && diceValue === 6) {
+        return { blue: 'B04', green: 'G21', red: 'R10', yellow: 'Y42' }[color.toLowerCase()];
+      }
+      if (isInBase) return null;
+      
+      const paths = {
+        blue: ['B04','B03','B02','B01','B00','R52','R42','R32','R22','R12','R02','R01','R00','R10','R20','R30','R40','R50','G05','G04','G03','G02','G01','G00','G10','G20','G21','G22','G23','G24','G25','Y00','Y10','Y20','Y30','Y40','Y50','Y51','Y52','Y42','Y32','Y22','Y12','Y02','B20','B21','B22','B23','B24','B25','B15','B14','B13','B12','B11','B10','BF'],
+        green: ['G21','G22','G23','G24','G25','Y00','Y10','Y20','Y30','Y40','Y50','Y51','Y52','Y42','Y32','Y22','Y12','Y02','B20','B21','B22','B23','B24','B25','B15','B05','B04','B03','B02','B01','B00','R52','R42','R32','R22','R12','R02','R01','R00','R10','R20','R30','R40','R50','G05','G04','G03','G02','G01','G00','G10','G11','G12','G13','G14','G15','GF'],
+        red: ['R10','R20','R30','R40','R50','G05','G04','G03','G02','G01','G00','G10','G20','G21','G22','G23','G24','G25','Y00','Y10','Y20','Y30','Y40','Y50','Y51','Y52','Y42','Y32','Y22','Y12','Y02','B20','B21','B22','B23','B24','B25','B15','B05','B04','B03','B02','B01','B00','R52','R42','R32','R22','R12','R02','R01','R11','R21','R31','R41','R51','RF'],
+        yellow: ['Y42','Y32','Y22','Y12','Y02','B20','B21','B22','B23','B24','B25','B15','B05','B04','B03','B02','B01','B00','R52','R42','R32','R22','R12','R02','R01','R00','R10','R20','R30','R40','R50','G05','G04','G03','G02','G01','G00','G10','G20','G21','G22','G23','G24','G25','Y00','Y10','Y20','Y30','Y40','Y50','Y51','Y41','Y31','Y21','Y11','Y01','YF']
+      };
+      
+      const path = paths[color.toLowerCase()];
+      const currentIndex = path.indexOf(currentPos);
+      if (currentIndex === -1) return null;
+      
+      const targetIndex = currentIndex + diceValue;
+      if (targetIndex >= path.length) return null;
+      
+      return path[targetIndex];
+    }
+
+    window.onload = () => {
+      document.getElementById('playerName').value = generateName();
+      log('Open in TWO tabs to test!', 'info');
+    };
+  </script>
+</body>
+</html>
