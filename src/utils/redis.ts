@@ -16,13 +16,36 @@ class RedisClient {
     }
 
     try {
-      this.client = createClient({
-        socket: {
-          host: config.redis.host,
-          port: config.redis.port,
-        },
-        password: config.redis.password,
-      });
+      // Use REDIS_URL if available (Upstash/cloud), otherwise use host/port (local dev)
+      if (config.redis.url) {
+        logger.info('Connecting to Redis using URL (Upstash)');
+        this.client = createClient({
+          url: config.redis.url,
+          socket: {
+            tls: true,
+            rejectUnauthorized: true,
+            // Retry strategy for cloud deployments
+            reconnectStrategy: (retries) => {
+              if (retries > 10) {
+                logger.error('Redis max reconnection attempts reached');
+                return new Error('Max reconnection attempts reached');
+              }
+              const delay = Math.min(retries * 100, 3000);
+              logger.info(`Redis reconnecting in ${delay}ms (attempt ${retries})`);
+              return delay;
+            },
+          },
+        });
+      } else {
+        logger.info('Connecting to Redis using host/port (local)');
+        this.client = createClient({
+          socket: {
+            host: config.redis.host,
+            port: config.redis.port,
+          },
+          password: config.redis.password,
+        });
+      }
 
       // Error handler
       this.client.on('error', (err) => {
@@ -47,7 +70,14 @@ class RedisClient {
         this.isConnected = false;
       });
 
+      // End event (connection closed)
+      this.client.on('end', () => {
+        logger.warn('Redis connection closed');
+        this.isConnected = false;
+      });
+
       await this.client.connect();
+      logger.info('Redis connection established successfully');
     } catch (error) {
       logger.error('Failed to connect to Redis', error);
       throw error;

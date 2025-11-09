@@ -6,7 +6,8 @@ export const config = {
   port: parseInt(process.env.PORT || '3000', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
   redis: {
-    host: process.env.REDIS_HOST || 'localhost',
+    url: process.env.REDIS_URL, // Upstash Redis URL (primary)
+    host: process.env.REDIS_HOST || 'localhost', // Fallback for local dev
     port: parseInt(process.env.REDIS_PORT || '6379', 10),
     password: process.env.REDIS_PASSWORD || undefined,
   },
