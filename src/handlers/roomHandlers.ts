@@ -54,10 +54,13 @@ export function handleCreateRoom(socket: Socket): void {
       // Store player session for reconnection tracking
       await reconnectionService.storePlayerSession(socket.id, playerId, playerName, room.roomCode);
 
+      // Enrich room with player data for client
+      const enrichedRoom = await roomService.enrichRoomWithPlayers(room, playerName);
+
       // Send success response
       const response = {
         success: true,
-        room,
+        room: enrichedRoom,
       };
 
       logger.info('Room created successfully', { 
@@ -69,7 +72,7 @@ export function handleCreateRoom(socket: Socket): void {
       if (callback) callback(response);
 
       // Emit room_created event to the creator
-      socket.emit('room_created', { room });
+      socket.emit('room_created', { room: enrichedRoom });
 
     } catch (error: any) {
       logger.error('create_room error', { socketId: socket.id, error: error.message });
@@ -123,10 +126,13 @@ export function handleJoinRoom(socket: Socket): void {
       // Store player session for reconnection tracking
       await reconnectionService.storePlayerSession(socket.id, playerId, playerName, roomCode);
 
+      // Enrich room with player data for client
+      const enrichedRoom = await roomService.enrichRoomWithPlayers(room);
+
       // Send success response
       const response = {
         success: true,
-        room,
+        room: enrichedRoom,
       };
 
       logger.info('Player joined room successfully', { 
@@ -139,15 +145,15 @@ export function handleJoinRoom(socket: Socket): void {
       if (callback) callback(response);
 
       // Broadcast player_joined event to all room members
-      socket.to(roomCode).emit('player_joined', { room, player: { playerId, playerName } });
+      socket.to(roomCode).emit('player_joined', { room: enrichedRoom, player: { playerId, playerName } });
 
       // Also emit to the joining player
-      socket.emit('player_joined', { room, player: { playerId, playerName } });
+      socket.emit('player_joined', { room: enrichedRoom, player: { playerId, playerName } });
 
       // If we now have enough players, notify that game can start
       if (room.players.length >= 2) {
-        socket.to(roomCode).emit('ready_to_start', { room });
-        socket.emit('ready_to_start', { room });
+        socket.to(roomCode).emit('ready_to_start', { room: enrichedRoom });
+        socket.emit('ready_to_start', { room: enrichedRoom });
       }
 
     } catch (error: any) {

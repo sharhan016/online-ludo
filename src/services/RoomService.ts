@@ -1,4 +1,5 @@
-import { Room, RoomStatus, CreateRoomParams } from '../models/Room';
+import { Room, RoomStatus, CreateRoomParams, RoomWithPlayers } from '../models/Room';
+import { Player, PlayerColor, ConnectionStatus } from '../models/Player';
 import { redisClient, RedisKeys } from '../utils/redis';
 import { generateRoomCode, isValidRoomCode, isValidPlayerId, isValidPlayerName } from '../utils/validation';
 import { logger } from '../utils/logger';
@@ -365,5 +366,43 @@ export class RoomService {
       return false;
     }
     return room.players.length >= room.maxPlayers;
+  }
+
+  /**
+   * Enrich room data with full player information for client response
+   */
+  async enrichRoomWithPlayers(room: Room, playerName?: string): Promise<RoomWithPlayers> {
+    const availableColors = [PlayerColor.RED, PlayerColor.BLUE, PlayerColor.GREEN, PlayerColor.YELLOW];
+    const usedColors: PlayerColor[] = [];
+
+    const players: Player[] = await Promise.all(
+      room.players.map(async (playerId, index) => {
+        // Get player session to retrieve player name
+        const sessionKey = `player:${playerId}:session`;
+        const session = await redisClient.getJson<any>(sessionKey);
+        
+        // Assign color (cycle through available colors)
+        const color = availableColors[index % availableColors.length];
+        usedColors.push(color);
+
+        return {
+          playerId,
+          playerName: session?.playerName || playerName || 'Player',
+          color,
+          connectionStatus: ConnectionStatus.CONNECTED,
+          isSpectator: false,
+          rank: 0,
+        };
+      })
+    );
+
+    return {
+      roomCode: room.roomCode,
+      hostId: room.hostId,
+      players,
+      status: room.status,
+      maxPlayers: room.maxPlayers,
+      createdAt: room.createdAt,
+    };
   }
 }
