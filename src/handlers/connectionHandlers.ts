@@ -13,9 +13,32 @@ export function handleConnection(socket: Socket): void {
     socketId: socket.id,
     address: socket.handshake.address,
     userAgent: socket.handshake.headers['user-agent'],
+    timestamp: new Date().toISOString(),
   };
 
-  logger.info('Client connected', clientInfo);
+  logger.info('=== CLIENT CONNECTED ===', clientInfo);
+
+  // Log all incoming events for debugging
+  socket.onAny((eventName, ...args) => {
+    logger.info(`>>> INCOMING EVENT: ${eventName}`, {
+      socketId: socket.id,
+      eventName,
+      args,
+      timestamp: new Date().toISOString(),
+    });
+  });
+
+  // Log all outgoing events for debugging
+  const originalEmit = socket.emit.bind(socket);
+  socket.emit = function(eventName: string, ...args: any[]) {
+    logger.info(`<<< OUTGOING EVENT: ${eventName}`, {
+      socketId: socket.id,
+      eventName,
+      args,
+      timestamp: new Date().toISOString(),
+    });
+    return originalEmit(eventName, ...args);
+  } as any;
 }
 
 /**
