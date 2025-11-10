@@ -96,13 +96,36 @@ class RedisClient {
   }
 
   /**
+   * Ensure client is connected, attempt reconnect if needed
+   */
+  private async ensureConnected(): Promise<void> {
+    if (this.client && this.isConnected) {
+      return;
+    }
+
+    if (this.client && !this.isConnected) {
+      logger.warn('Redis client exists but not connected, attempting reconnect...');
+      try {
+        if (!this.client.isOpen) {
+          await this.client.connect();
+        }
+        return;
+      } catch (error) {
+        logger.error('Failed to reconnect existing client', error);
+        // Fall through to create new client
+      }
+    }
+
+    logger.warn('Redis client not available, creating new connection...');
+    await this.connect();
+  }
+
+  /**
    * Get value by key
    */
   async get(key: string): Promise<string | null> {
-    if (!this.client || !this.isConnected) {
-      throw new Error('Redis client not connected');
-    }
-    return await this.client.get(key);
+    await this.ensureConnected();
+    return await this.client!.get(key);
   }
 
   /**
@@ -123,14 +146,12 @@ class RedisClient {
    * Set value with optional expiration
    */
   async set(key: string, value: string, ttl?: number): Promise<void> {
-    if (!this.client || !this.isConnected) {
-      throw new Error('Redis client not connected');
-    }
+    await this.ensureConnected();
 
     if (ttl) {
-      await this.client.setEx(key, ttl, value);
+      await this.client!.setEx(key, ttl, value);
     } else {
-      await this.client.set(key, value);
+      await this.client!.set(key, value);
     }
   }
 
@@ -146,21 +167,17 @@ class RedisClient {
    * Delete key
    */
   async delete(key: string): Promise<void> {
-    if (!this.client || !this.isConnected) {
-      throw new Error('Redis client not connected');
-    }
-    await this.client.del(key);
+    await this.ensureConnected();
+    await this.client!.del(key);
   }
 
   /**
    * Delete multiple keys
    */
   async deleteMany(keys: string[]): Promise<void> {
-    if (!this.client || !this.isConnected) {
-      throw new Error('Redis client not connected');
-    }
+    await this.ensureConnected();
     if (keys.length > 0) {
-      await this.client.del(keys);
+      await this.client!.del(keys);
     }
   }
 
@@ -168,10 +185,8 @@ class RedisClient {
    * Check if key exists
    */
   async exists(key: string): Promise<boolean> {
-    if (!this.client || !this.isConnected) {
-      throw new Error('Redis client not connected');
-    }
-    const result = await this.client.exists(key);
+    await this.ensureConnected();
+    const result = await this.client!.exists(key);
     return result === 1;
   }
 
@@ -179,110 +194,88 @@ class RedisClient {
    * Set expiration on key
    */
   async expire(key: string, seconds: number): Promise<void> {
-    if (!this.client || !this.isConnected) {
-      throw new Error('Redis client not connected');
-    }
-    await this.client.expire(key, seconds);
+    await this.ensureConnected();
+    await this.client!.expire(key, seconds);
   }
 
   /**
    * Get all keys matching pattern
    */
   async keys(pattern: string): Promise<string[]> {
-    if (!this.client || !this.isConnected) {
-      throw new Error('Redis client not connected');
-    }
-    return await this.client.keys(pattern);
+    await this.ensureConnected();
+    return await this.client!.keys(pattern);
   }
 
   /**
    * Add value to set
    */
   async sAdd(key: string, value: string): Promise<void> {
-    if (!this.client || !this.isConnected) {
-      throw new Error('Redis client not connected');
-    }
-    await this.client.sAdd(key, value);
+    await this.ensureConnected();
+    await this.client!.sAdd(key, value);
   }
 
   /**
    * Remove value from set
    */
   async sRem(key: string, value: string): Promise<void> {
-    if (!this.client || !this.isConnected) {
-      throw new Error('Redis client not connected');
-    }
-    await this.client.sRem(key, value);
+    await this.ensureConnected();
+    await this.client!.sRem(key, value);
   }
 
   /**
    * Get all members of set
    */
   async sMembers(key: string): Promise<string[]> {
-    if (!this.client || !this.isConnected) {
-      throw new Error('Redis client not connected');
-    }
-    return await this.client.sMembers(key);
+    await this.ensureConnected();
+    return await this.client!.sMembers(key);
   }
 
   /**
    * Get set size
    */
   async sCard(key: string): Promise<number> {
-    if (!this.client || !this.isConnected) {
-      throw new Error('Redis client not connected');
-    }
-    return await this.client.sCard(key);
+    await this.ensureConnected();
+    return await this.client!.sCard(key);
   }
 
   /**
    * Add member to sorted set with score
    */
   async zAdd(key: string, score: number, member: string): Promise<void> {
-    if (!this.client || !this.isConnected) {
-      throw new Error('Redis client not connected');
-    }
-    await this.client.zAdd(key, { score, value: member });
+    await this.ensureConnected();
+    await this.client!.zAdd(key, { score, value: member });
   }
 
   /**
    * Remove member from sorted set
    */
   async zRem(key: string, member: string): Promise<void> {
-    if (!this.client || !this.isConnected) {
-      throw new Error('Redis client not connected');
-    }
-    await this.client.zRem(key, member);
+    await this.ensureConnected();
+    await this.client!.zRem(key, member);
   }
 
   /**
    * Get members from sorted set by score range
    */
   async zRangeByScore(key: string, min: number, max: number): Promise<string[]> {
-    if (!this.client || !this.isConnected) {
-      throw new Error('Redis client not connected');
-    }
-    return await this.client.zRangeByScore(key, min, max);
+    await this.ensureConnected();
+    return await this.client!.zRangeByScore(key, min, max);
   }
 
   /**
    * Get all members from sorted set ordered by score
    */
   async zRange(key: string, start: number, stop: number): Promise<string[]> {
-    if (!this.client || !this.isConnected) {
-      throw new Error('Redis client not connected');
-    }
-    return await this.client.zRange(key, start, stop);
+    await this.ensureConnected();
+    return await this.client!.zRange(key, start, stop);
   }
 
   /**
    * Get sorted set size
    */
   async zCard(key: string): Promise<number> {
-    if (!this.client || !this.isConnected) {
-      throw new Error('Redis client not connected');
-    }
-    return await this.client.zCard(key);
+    await this.ensureConnected();
+    return await this.client!.zCard(key);
   }
 
   /**

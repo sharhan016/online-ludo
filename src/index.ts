@@ -17,8 +17,15 @@ app.use(cors({
 }));
 
 // Health check endpoint
-app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+app.get('/health', async (_req, res) => {
+  const health = {
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    redis: redisClient.isReady() ? 'connected' : 'disconnected',
+  };
+  
+  logger.info('Health check', health);
+  res.json(health);
 });
 
 // Initialize Socket.io with CORS configuration
