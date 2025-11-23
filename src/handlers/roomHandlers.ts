@@ -19,34 +19,21 @@ const reconnectionService = new ReconnectionService();
  */
 export function handleCreateRoom(socket: Socket): void {
   socket.on('create_room', async (data, callback) => {
-    const startTime = Date.now();
-    logger.info('>>> INCOMING: create_room', { 
-      socketId: socket.id, 
-      data,
-      timestamp: new Date().toISOString()
-    });
-
     try {
+      logger.debug('create_room event received', { socketId: socket.id, data });
+
       const { playerId, playerName, maxPlayers } = data;
 
       if (!playerId) {
         const error = { error: 'Player ID is required' };
-        logger.warn('<<< RESPONSE: create_room FAILED - missing playerId', { 
-          socketId: socket.id,
-          error,
-          duration: Date.now() - startTime
-        });
+        logger.warn('create_room failed: missing playerId', { socketId: socket.id });
         if (callback) callback(error);
         return;
       }
 
       if (!playerName) {
         const error = { error: 'Player name is required' };
-        logger.warn('<<< RESPONSE: create_room FAILED - missing playerName', { 
-          socketId: socket.id,
-          error,
-          duration: Date.now() - startTime
-        });
+        logger.warn('create_room failed: missing playerName', { socketId: socket.id });
         if (callback) callback(error);
         return;
       }
@@ -56,11 +43,9 @@ export function handleCreateRoom(socket: Socket): void {
         hostId: playerId,
         maxPlayers: maxPlayers || 4,
       });
-      logger.info('create_room: Room created', { roomCode: room.roomCode, hostId: playerId });
 
       // Join socket to room channel
       socket.join(room.roomCode);
-      logger.info('create_room: Socket joined room channel', { roomCode: room.roomCode, socketId: socket.id });
 
       // Store room code in socket data
       socket.data.roomCode = room.roomCode;
@@ -68,7 +53,6 @@ export function handleCreateRoom(socket: Socket): void {
 
       // Store player session for reconnection tracking
       await reconnectionService.storePlayerSession(socket.id, playerId, playerName, room.roomCode);
-      logger.info('create_room: Player session stored', { playerId, roomCode: room.roomCode });
 
       // Enrich room with player data for client
       const enrichedRoom = await roomService.enrichRoomWithPlayers(room, playerName);
@@ -79,34 +63,20 @@ export function handleCreateRoom(socket: Socket): void {
         room: enrichedRoom,
       };
 
-      logger.info('<<< RESPONSE: create_room SUCCESS', { 
-        socketId: socket.id,
+      logger.info('Room created successfully', { 
         roomCode: room.roomCode, 
         hostId: playerId,
-        response,
-        duration: Date.now() - startTime
+        socketId: socket.id 
       });
 
       if (callback) callback(response);
 
       // Emit room_created event to the creator
-      logger.info('>>> EMIT: room_created', { 
-        socketId: socket.id,
-        roomCode: room.roomCode,
-        data: { room: enrichedRoom }
-      });
       socket.emit('room_created', { room: enrichedRoom });
 
     } catch (error: any) {
+      logger.error('create_room error', { socketId: socket.id, error: error.message });
       const errorResponse = { error: error.message || 'Failed to create room' };
-      logger.error('<<< RESPONSE: create_room ERROR', { 
-        socketId: socket.id,
-        data,
-        error: error.message,
-        stack: error.stack,
-        errorResponse,
-        duration: Date.now() - startTime
-      });
       if (callback) callback(errorResponse);
     }
   });
@@ -117,59 +87,37 @@ export function handleCreateRoom(socket: Socket): void {
  */
 export function handleJoinRoom(socket: Socket): void {
   socket.on('join_room', async (data, callback) => {
-    const startTime = Date.now();
-    logger.info('>>> INCOMING: join_room', { 
-      socketId: socket.id, 
-      data,
-      timestamp: new Date().toISOString()
-    });
-
     try {
+      logger.debug('join_room event received', { socketId: socket.id, data });
+
       const { roomCode, playerId, playerName } = data;
 
-      // Validation
       if (!roomCode) {
         const error = { error: 'Room code is required' };
-        logger.warn('<<< RESPONSE: join_room FAILED - missing roomCode', { 
-          socketId: socket.id,
-          error,
-          duration: Date.now() - startTime
-        });
+        logger.warn('join_room failed: missing roomCode', { socketId: socket.id });
         if (callback) callback(error);
         return;
       }
 
       if (!playerId) {
         const error = { error: 'Player ID is required' };
-        logger.warn('<<< RESPONSE: join_room FAILED - missing playerId', { 
-          socketId: socket.id,
-          error,
-          duration: Date.now() - startTime
-        });
+        logger.warn('join_room failed: missing playerId', { socketId: socket.id });
         if (callback) callback(error);
         return;
       }
 
       if (!playerName) {
         const error = { error: 'Player name is required' };
-        logger.warn('<<< RESPONSE: join_room FAILED - missing playerName', { 
-          socketId: socket.id,
-          error,
-          duration: Date.now() - startTime
-        });
+        logger.warn('join_room failed: missing playerName', { socketId: socket.id });
         if (callback) callback(error);
         return;
       }
 
-      logger.info('join_room: Attempting to join room', { roomCode, playerId, playerName });
-
       // Join room
       const room = await roomService.joinRoom(roomCode, playerId, playerName);
-      logger.info('join_room: Room joined in service', { roomCode, playerId, playerCount: room.players.length });
 
       // Join socket to room channel
       socket.join(roomCode);
-      logger.info('join_room: Socket joined room channel', { roomCode, socketId: socket.id });
 
       // Store room code in socket data
       socket.data.roomCode = roomCode;
@@ -177,15 +125,9 @@ export function handleJoinRoom(socket: Socket): void {
 
       // Store player session for reconnection tracking
       await reconnectionService.storePlayerSession(socket.id, playerId, playerName, roomCode);
-      logger.info('join_room: Player session stored', { playerId, roomCode });
 
       // Enrich room with player data for client
       const enrichedRoom = await roomService.enrichRoomWithPlayers(room);
-      logger.info('join_room: Room enriched with player data', { 
-        roomCode, 
-        playerCount: enrichedRoom.players.length,
-        players: enrichedRoom.players.map(p => ({ id: p.playerId, name: p.playerName, color: p.color }))
-      });
 
       // Send success response
       const response = {
@@ -193,55 +135,50 @@ export function handleJoinRoom(socket: Socket): void {
         room: enrichedRoom,
       };
 
-      logger.info('<<< RESPONSE: join_room SUCCESS', { 
-        socketId: socket.id,
-        roomCode,
+      logger.info('Player joined room successfully', { 
+        roomCode, 
         playerId,
         playerName,
-        response,
-        duration: Date.now() - startTime
+        socketId: socket.id 
       });
 
       if (callback) callback(response);
 
       // Broadcast player_joined event to all room members
-      const broadcastData = { room: enrichedRoom, player: { playerId, playerName } };
-      logger.info('>>> EMIT: player_joined (broadcast)', { 
-        roomCode, 
-        data: broadcastData,
-        targetSockets: 'all in room except sender'
-      });
-      socket.to(roomCode).emit('player_joined', broadcastData);
+      socket.to(roomCode).emit('player_joined', { room: enrichedRoom, player: { playerId, playerName } });
 
       // Also emit to the joining player
-      logger.info('>>> EMIT: player_joined (to sender)', { 
-        socketId: socket.id,
-        data: broadcastData
-      });
-      socket.emit('player_joined', broadcastData);
+      socket.emit('player_joined', { room: enrichedRoom, player: { playerId, playerName } });
 
-      // If we now have enough players, notify that game can start
-      if (room.players.length >= 2) {
-        const readyData = { room: enrichedRoom };
-        logger.info('>>> EMIT: ready_to_start', { 
-          roomCode, 
-          playerCount: room.players.length,
-          data: readyData
-        });
-        socket.to(roomCode).emit('ready_to_start', readyData);
-        socket.emit('ready_to_start', readyData);
+      // If room is now full, auto-start the game
+      if (room.players.length >= room.maxPlayers) {
+        logger.info('Room is full, auto-starting game', { roomCode, playerCount: room.players.length });
+        
+        // Update room status to playing
+        await roomService.updateRoomStatus(roomCode, require('../models/Room').RoomStatus.PLAYING);
+        
+        // Initialize game state
+        const { GameService } = require('../services/GameService');
+        const gameService = new GameService();
+        await gameService.initializeGame(roomCode, room.players);
+        
+        // Get enriched room with updated status
+        const updatedRoom = await roomService.getRoomData(roomCode);
+        const enrichedUpdatedRoom = await roomService.enrichRoomWithPlayers(updatedRoom!);
+        
+        // Notify all players that game is starting
+        socket.to(roomCode).emit('game_started', { room: enrichedUpdatedRoom });
+        socket.emit('game_started', { room: enrichedUpdatedRoom });
+      }
+      // If we now have enough players (but not full), notify that game can start
+      else if (room.players.length >= 2) {
+        socket.to(roomCode).emit('ready_to_start', { room: enrichedRoom });
+        socket.emit('ready_to_start', { room: enrichedRoom });
       }
 
     } catch (error: any) {
+      logger.error('join_room error', { socketId: socket.id, error: error.message });
       const errorResponse = { error: error.message || 'Failed to join room' };
-      logger.error('<<< RESPONSE: join_room ERROR', { 
-        socketId: socket.id,
-        data,
-        error: error.message,
-        stack: error.stack,
-        errorResponse,
-        duration: Date.now() - startTime
-      });
       if (callback) callback(errorResponse);
     }
   });
