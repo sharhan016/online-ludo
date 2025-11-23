@@ -379,7 +379,7 @@ export class RoomService {
     // For 3-player games, skip one position (RED, GREEN, YELLOW)
     // For 4-player games, use all colors
     const colorAssignmentMap: { [key: number]: number[] } = {
-      2: [0, 2],        // RED, GREEN (opposite sides)
+      2: [0, 3],        // RED, GREEN (opposite sides)
       3: [0, 2, 3],     // RED, GREEN, YELLOW
       4: [0, 1, 2, 3],  // RED, BLUE, GREEN, YELLOW
     };
