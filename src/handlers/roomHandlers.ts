@@ -302,19 +302,35 @@ export function handleStartGame(socket: Socket): void {
       const updatedRoom = await roomService.updateRoomStatus(roomCode, RoomStatus.PLAYING);
 
       // Initialize game state with players
-      const colors: PlayerColor[] = [PlayerColor.BLUE, PlayerColor.GREEN, PlayerColor.RED, PlayerColor.YELLOW];
+      const colors: PlayerColor[] = [PlayerColor.RED, PlayerColor.BLUE, PlayerColor.GREEN, PlayerColor.YELLOW];
       const { ConnectionStatus } = require('../models/Player');
-      const gamePlayers = updatedRoom.players.map((playerId, index) => ({
-        playerId,
-        playerName: playerId, // TODO: Get actual player names from room data
-        color: colors[index],
-        connectionStatus: ConnectionStatus.CONNECTED,
-        isSpectator: false,
-        rank: 0,
-        socketId: socket.id,
-      }));
+      
+      // Get player names from sessions
+      const { redisClient } = require('../utils/redis');
+      const gamePlayers = await Promise.all(
+        updatedRoom.players.map(async (playerId, index) => {
+          const sessionKey = `player:${playerId}:session`;
+          const session = await redisClient.getJson(sessionKey);
+          
+          return {
+            playerId,
+            playerName: session?.playerName || `Player ${index + 1}`,
+            color: colors[index],
+            connectionStatus: ConnectionStatus.CONNECTED,
+            isSpectator: false,
+            rank: 0,
+            socketId: socket.id,
+          };
+        })
+      );
 
       const gameState = await gameService.initializeGame(roomCode, gamePlayers);
+
+      logger.info('start_game: Game state initialized', { 
+        roomCode,
+        players: gamePlayers.map(p => ({ id: p.playerId, name: p.playerName, color: p.color })),
+        currentPlayer: gamePlayers[gameState.currentPlayerIndex].playerName
+      });
 
       // Send success response
       const response = {
@@ -333,8 +349,31 @@ export function handleStartGame(socket: Socket): void {
       if (callback) callback(response);
 
       // Broadcast game_started event to all room members
+      logger.info('>>> EMIT: game_started', { roomCode, data: { room: updatedRoom, gameState } });
       socket.to(roomCode).emit('game_started', { room: updatedRoom, gameState });
       socket.emit('game_started', { room: updatedRoom, gameState });
+
+      // Send initial game state update (required by client)
+      const gameStateUpdate = {
+        ...gameState,
+        currentPlayerId: gamePlayers[gameState.currentPlayerIndex].playerId,
+        currentPlayerName: gamePlayers[gameState.currentPlayerIndex].playerName,
+        gameStatus: 'playing',
+        turnCount: 0,
+        lastAction: {
+          type: 'game_started',
+          timestamp: new Date().toISOString(),
+        },
+        timestamp: Date.now(),
+      };
+
+      logger.info('>>> EMIT: game_state_update (initial)', { 
+        roomCode,
+        currentPlayer: gameStateUpdate.currentPlayerName,
+        phase: gameState.phase
+      });
+      socket.to(roomCode).emit('game_state_update', gameStateUpdate);
+      socket.emit('game_state_update', gameStateUpdate);
 
     } catch (error: any) {
       logger.error('start_game error', { socketId: socket.id, error: error.message });
