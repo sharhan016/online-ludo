@@ -71,78 +71,48 @@ export class RoomService {
    * Join an existing room
    */
   async joinRoom(roomCode: string, playerId: string, playerName: string): Promise<Room> {
-    logger.info('RoomService.joinRoom: Starting', { roomCode, playerId, playerName });
-
     if (!isValidRoomCode(roomCode)) {
-      logger.error('RoomService.joinRoom: Invalid room code format', { roomCode });
       throw new Error('Invalid room code format');
     }
 
     if (!isValidPlayerId(playerId)) {
-      logger.error('RoomService.joinRoom: Invalid player ID', { playerId });
       throw new Error('Invalid player ID');
     }
 
     if (!isValidPlayerName(playerName)) {
-      logger.error('RoomService.joinRoom: Invalid player name', { playerName });
       throw new Error('Invalid player name');
     }
 
     // Get room from Redis
-    logger.info('RoomService.joinRoom: Fetching room from Redis', { roomCode, redisKey: RedisKeys.room(roomCode) });
     const room = await redisClient.getJson<Room>(RedisKeys.room(roomCode));
 
     if (!room) {
-      logger.error('RoomService.joinRoom: Room not found in Redis', { roomCode, redisKey: RedisKeys.room(roomCode) });
       throw new Error('Room not found');
     }
 
-    logger.info('RoomService.joinRoom: Room found', { 
-      roomCode, 
-      currentPlayers: room.players,
-      maxPlayers: room.maxPlayers,
-      status: room.status
-    });
-
     // Check if room is full
     if (room.players.length >= room.maxPlayers) {
-      logger.warn('RoomService.joinRoom: Room is full', { 
-        roomCode, 
-        currentPlayers: room.players.length,
-        maxPlayers: room.maxPlayers
-      });
       throw new Error('Room is full');
     }
 
     // Check if player already in room
     if (room.players.includes(playerId)) {
-      logger.warn('RoomService.joinRoom: Player already in room', { roomCode, playerId });
+      logger.warn('Player already in room', { roomCode, playerId });
       return room;
     }
 
     // Check if game already started
     if (room.status !== RoomStatus.WAITING) {
-      logger.warn('RoomService.joinRoom: Game already started', { roomCode, status: room.status });
       throw new Error('Game already started');
     }
 
     // Add player to room
     room.players.push(playerId);
-    logger.info('RoomService.joinRoom: Player added to room array', { 
-      roomCode, 
-      playerId,
-      updatedPlayers: room.players
-    });
 
     // Update room in Redis
     await redisClient.setJson(RedisKeys.room(roomCode), room, this.ROOM_TTL);
-    logger.info('RoomService.joinRoom: Room updated in Redis', { 
-      roomCode, 
-      redisKey: RedisKeys.room(roomCode),
-      playerCount: room.players.length
-    });
 
-    logger.info('RoomService.joinRoom: Success', { roomCode, playerId, playerName, playerCount: room.players.length });
+    logger.info('Player joined room', { roomCode, playerId, playerName, playerCount: room.players.length });
 
     return room;
   }
@@ -405,14 +375,27 @@ export class RoomService {
     const availableColors = [PlayerColor.RED, PlayerColor.BLUE, PlayerColor.GREEN, PlayerColor.YELLOW];
     const usedColors: PlayerColor[] = [];
 
+    // For 2-player games, use opposite sides (RED vs GREEN)
+    // For 3-player games, skip one position (RED, GREEN, YELLOW)
+    // For 4-player games, use all colors
+    const colorAssignmentMap: { [key: number]: number[] } = {
+      2: [0, 2],        // RED, GREEN (opposite sides)
+      3: [0, 2, 3],     // RED, GREEN, YELLOW
+      4: [0, 1, 2, 3],  // RED, BLUE, GREEN, YELLOW
+    };
+
+    const playerCount = room.players.length;
+    const colorIndices = colorAssignmentMap[playerCount] || [0, 1, 2, 3];
+
     const players: Player[] = await Promise.all(
       room.players.map(async (playerId, index) => {
         // Get player session to retrieve player name
         const sessionKey = `player:${playerId}:session`;
         const session = await redisClient.getJson<any>(sessionKey);
         
-        // Assign color (cycle through available colors)
-        const color = availableColors[index % availableColors.length];
+        // Assign color based on player count and position
+        const colorIndex = colorIndices[index % colorIndices.length];
+        const color = availableColors[colorIndex];
         usedColors.push(color);
 
         return {
