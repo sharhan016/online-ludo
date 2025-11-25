@@ -3,7 +3,6 @@ import { RoomService } from '../services/RoomService';
 import { GameService } from '../services/GameService';
 import { ReconnectionService } from '../services/ReconnectionService';
 import { RoomStatus } from '../models/Room';
-import { PlayerColor } from '../models/Player';
 import { logger } from '../utils/logger';
 
 const roomService = new RoomService();
