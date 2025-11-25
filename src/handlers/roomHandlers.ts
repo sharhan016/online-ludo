@@ -157,14 +157,14 @@ export function handleJoinRoom(socket: Socket): void {
         // Update room status to playing
         await roomService.updateRoomStatus(roomCode, require('../models/Room').RoomStatus.PLAYING);
         
-        // Initialize game state
-        const { GameService } = require('../services/GameService');
-        const gameService = new GameService();
-        await gameService.initializeGame(roomCode, room.players);
-        
-        // Get enriched room with updated status
+        // Get enriched room with player colors BEFORE initializing game
         const updatedRoom = await roomService.getRoomData(roomCode);
         const enrichedUpdatedRoom = await roomService.enrichRoomWithPlayers(updatedRoom!);
+        
+        // Initialize game state with proper Player objects (including colors)
+        const { GameService } = require('../services/GameService');
+        const gameService = new GameService();
+        await gameService.initializeGame(roomCode, enrichedUpdatedRoom.players);
         
         // Notify all players that game is starting
         socket.to(roomCode).emit('game_started', { room: enrichedUpdatedRoom });
@@ -301,36 +301,11 @@ export function handleStartGame(socket: Socket): void {
       // Update room status to PLAYING
       const updatedRoom = await roomService.updateRoomStatus(roomCode, RoomStatus.PLAYING);
 
-      // Initialize game state with players
-      const colors: PlayerColor[] = [PlayerColor.RED, PlayerColor.BLUE, PlayerColor.GREEN, PlayerColor.YELLOW];
-      const { ConnectionStatus } = require('../models/Player');
-      
-      // Get player names from sessions
-      const { redisClient } = require('../utils/redis');
-      const gamePlayers = await Promise.all(
-        updatedRoom.players.map(async (playerId, index) => {
-          const sessionKey = `player:${playerId}:session`;
-          const session = await redisClient.getJson(sessionKey);
-          
-          return {
-            playerId,
-            playerName: session?.playerName || `Player ${index + 1}`,
-            color: colors[index],
-            connectionStatus: ConnectionStatus.CONNECTED,
-            isSpectator: false,
-            rank: 0,
-            socketId: socket.id,
-          };
-        })
-      );
+      // Get enriched room with proper player colors
+      const enrichedRoom = await roomService.enrichRoomWithPlayers(updatedRoom);
 
-      const gameState = await gameService.initializeGame(roomCode, gamePlayers);
-
-      logger.info('start_game: Game state initialized', { 
-        roomCode,
-        players: gamePlayers.map(p => ({ id: p.playerId, name: p.playerName, color: p.color })),
-        currentPlayer: gamePlayers[gameState.currentPlayerIndex].playerName
-      });
+      // Initialize game state with players (with correct colors from enrichRoomWithPlayers)
+      const gameState = await gameService.initializeGame(roomCode, enrichedRoom.players);
 
       // Send success response
       const response = {
@@ -349,31 +324,8 @@ export function handleStartGame(socket: Socket): void {
       if (callback) callback(response);
 
       // Broadcast game_started event to all room members
-      logger.info('>>> EMIT: game_started', { roomCode, data: { room: updatedRoom, gameState } });
       socket.to(roomCode).emit('game_started', { room: updatedRoom, gameState });
       socket.emit('game_started', { room: updatedRoom, gameState });
-
-      // Send initial game state update (required by client)
-      const gameStateUpdate = {
-        ...gameState,
-        currentPlayerId: gamePlayers[gameState.currentPlayerIndex].playerId,
-        currentPlayerName: gamePlayers[gameState.currentPlayerIndex].playerName,
-        gameStatus: 'playing',
-        turnCount: 0,
-        lastAction: {
-          type: 'game_started',
-          timestamp: new Date().toISOString(),
-        },
-        timestamp: Date.now(),
-      };
-
-      logger.info('>>> EMIT: game_state_update (initial)', { 
-        roomCode,
-        currentPlayer: gameStateUpdate.currentPlayerName,
-        phase: gameState.phase
-      });
-      socket.to(roomCode).emit('game_state_update', gameStateUpdate);
-      socket.emit('game_state_update', gameStateUpdate);
 
     } catch (error: any) {
       logger.error('start_game error', { socketId: socket.id, error: error.message });
