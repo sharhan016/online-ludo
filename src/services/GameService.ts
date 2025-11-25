@@ -10,6 +10,7 @@ import {
   isValidTokenId,
   BASE_POSITIONS,
 } from '../utils/gameRules';
+import { logger } from '../utils';
 
 /**
  * Game logic service
@@ -215,7 +216,12 @@ export class GameService {
     }
 
     // Validate token belongs to player
-    if (!isValidTokenId(tokenId, currentPlayer.color)) {
+    logger.info(`[MOVE_TOKEN] Validating token: tokenId=${tokenId}, playerColor=${currentPlayer.color}`);
+    const isValid = isValidTokenId(tokenId, currentPlayer.color);
+    logger.info(`[MOVE_TOKEN] Token validation result: ${isValid}`);
+    
+    if (!isValid) {
+      logger.warn(`[MOVE_TOKEN] Invalid token: ${tokenId} for color ${currentPlayer.color}`);
       return { success: false, error: 'Invalid token' };
     }
 

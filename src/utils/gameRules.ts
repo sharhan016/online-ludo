@@ -199,5 +199,10 @@ export function getBasePosition(tokenId: string, color: PlayerColor): string {
  */
 export function isValidTokenId(tokenId: string, color: PlayerColor): boolean {
   const colorPrefix = color.charAt(0).toUpperCase();
-  return tokenId.startsWith(colorPrefix + 'T') && tokenId.length === 3;
+  const expectedPrefix = colorPrefix + 'T';
+  const isValid = tokenId.startsWith(expectedPrefix) && tokenId.length === 3;
+  
+  console.log(`[isValidTokenId] tokenId: ${tokenId}, color: ${color}, colorPrefix: ${colorPrefix}, expectedPrefix: ${expectedPrefix}, length: ${tokenId.length}, isValid: ${isValid}`);
+  
+  return isValid;
 }
