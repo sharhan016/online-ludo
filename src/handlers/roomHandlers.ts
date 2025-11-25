@@ -163,11 +163,32 @@ export function handleJoinRoom(socket: Socket): void {
         // Initialize game state with proper Player objects (including colors)
         const { GameService } = require('../services/GameService');
         const gameService = new GameService();
-        await gameService.initializeGame(roomCode, enrichedUpdatedRoom.players);
+        const gameState = await gameService.initializeGame(roomCode, enrichedUpdatedRoom.players);
+        
+        // Log what we're sending
+        logger.info('[GAME_STARTED] Sending enriched room:', {
+          roomCode: enrichedUpdatedRoom.roomCode,
+          playerCount: enrichedUpdatedRoom.players.length,
+          players: enrichedUpdatedRoom.players.map((p: any) => ({
+            playerId: p.playerId,
+            color: p.color,
+            playerName: p.playerName
+          }))
+        });
         
         // Notify all players that game is starting
         socket.to(roomCode).emit('game_started', { room: enrichedUpdatedRoom });
         socket.emit('game_started', { room: enrichedUpdatedRoom });
+        
+        // Send initial game state to all players
+        socket.to(roomCode).emit('game_state_update', {
+          ...gameState,
+          timestamp: Date.now(),
+        });
+        socket.emit('game_state_update', {
+          ...gameState,
+          timestamp: Date.now(),
+        });
       }
       // If we now have enough players (but not full), notify that game can start
       else if (room.players.length >= 2) {
@@ -309,22 +330,37 @@ export function handleStartGame(socket: Socket): void {
       // Send success response
       const response = {
         success: true,
-        room: updatedRoom,
+        room: enrichedRoom,
         gameState,
       };
 
       logger.info('Game started successfully', { 
         roomCode, 
         hostId: playerId,
-        playerCount: updatedRoom.players.length,
-        socketId: socket.id 
+        playerCount: enrichedRoom.players.length,
+        socketId: socket.id,
+        players: enrichedRoom.players.map((p: any) => ({
+          playerId: p.playerId,
+          color: p.color,
+          playerName: p.playerName
+        }))
       });
 
       if (callback) callback(response);
 
-      // Broadcast game_started event to all room members
-      socket.to(roomCode).emit('game_started', { room: updatedRoom, gameState });
-      socket.emit('game_started', { room: updatedRoom, gameState });
+      // Broadcast game_started event to all room members with enriched room
+      socket.to(roomCode).emit('game_started', { room: enrichedRoom });
+      socket.emit('game_started', { room: enrichedRoom });
+      
+      // Send initial game state to all players
+      socket.to(roomCode).emit('game_state_update', {
+        ...gameState,
+        timestamp: Date.now(),
+      });
+      socket.emit('game_state_update', {
+        ...gameState,
+        timestamp: Date.now(),
+      });
 
     } catch (error: any) {
       logger.error('start_game error', { socketId: socket.id, error: error.message });
