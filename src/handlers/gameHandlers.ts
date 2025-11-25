@@ -21,129 +21,96 @@ async function isSpectator(roomCode: string, playerId: string): Promise<boolean>
  * Handle dice roll event
  */
 export function handleRollDice(socket: Socket): void {
-  socket.on('roll_dice', async (data: { roomCode: string; playerId: string }) => {
-    const startTime = Date.now();
-    logger.info('>>> INCOMING: roll_dice', { 
-      socketId: socket.id, 
-      data,
-      timestamp: new Date().toISOString()
-    });
-
+  socket.on('roll_dice', async (data: { roomCode: string; playerId: string }, callback?: Function) => {
     try {
+      logger.info(`[ROLL_DICE] Event received:`, data);
       const { roomCode, playerId } = data;
+
+      logger.info(`Player ${playerId} rolling dice in room ${roomCode}`);
 
       // Validate input
       if (!roomCode || !playerId) {
-        const error = { message: 'Missing required fields' };
-        logger.warn('<<< RESPONSE: roll_dice FAILED - missing fields', { 
-          socketId: socket.id,
-          error,
-          duration: Date.now() - startTime
-        });
-        socket.emit('error', error);
+        const error = { error: 'Missing required fields' };
+        if (callback) callback(error);
+        socket.emit('error', { message: 'Missing required fields' });
         return;
       }
 
       // Check if player is a spectator
       if (await isSpectator(roomCode, playerId)) {
-        const error = { message: 'Spectators cannot perform game actions' };
-        logger.warn('<<< RESPONSE: roll_dice FAILED - spectator', { 
-          socketId: socket.id,
-          roomCode,
-          playerId,
-          error,
-          duration: Date.now() - startTime
-        });
-        socket.emit('error', error);
+        const error = { error: 'Spectators cannot perform game actions' };
+        if (callback) callback(error);
+        socket.emit('error', { message: 'Spectators cannot perform game actions' });
+        logger.warn('Spectator attempted to roll dice', { roomCode, playerId });
         return;
       }
 
       // Roll dice
-      logger.info('roll_dice: Calling game service', { roomCode, playerId });
       const result = await gameService.rollDice(roomCode, playerId);
 
       if (!result.success) {
-        const error = { message: result.error };
-        logger.warn('<<< RESPONSE: roll_dice FAILED', { 
-          socketId: socket.id,
-          roomCode,
-          playerId,
-          error,
-          duration: Date.now() - startTime
-        });
-        socket.emit('error', error);
+        const error = { error: result.error };
+        if (callback) callback(error);
+        socket.emit('error', { message: result.error });
         return;
       }
-
-      logger.info('roll_dice: Dice rolled successfully', { 
-        roomCode,
-        playerId,
-        diceValue: result.diceValue,
-        skipTurn: result.skipTurn
-      });
 
       // Get updated game state
       const gameState = await gameService.getGameState(roomCode);
 
       if (!gameState) {
-        const error = { message: 'Game state not found' };
-        logger.error('<<< RESPONSE: roll_dice ERROR - game state not found', { 
-          socketId: socket.id,
-          roomCode,
-          error,
-          duration: Date.now() - startTime
-        });
-        socket.emit('error', error);
+        const error = { error: 'Game state not found' };
+        if (callback) callback(error);
+        socket.emit('error', { message: 'Game state not found' });
         return;
       }
 
-      const diceRolledData = {
+      // Send acknowledgment to the client
+      if (callback) {
+        callback({
+          success: true,
+          diceValue: result.diceValue,
+          skipTurn: result.skipTurn,
+        });
+      }
+
+      // Broadcast dice rolled event to all players in the room
+      socket.to(roomCode).emit('dice_rolled', {
         playerId,
         diceValue: result.diceValue,
         skipTurn: result.skipTurn,
         timestamp: Date.now(),
-      };
-
-      // Broadcast dice rolled event to all players in the room
-      logger.info('>>> EMIT: dice_rolled', { roomCode, data: diceRolledData });
-      socket.to(roomCode).emit('dice_rolled', diceRolledData);
-      socket.emit('dice_rolled', diceRolledData);
-
-      // Always broadcast updated game state after dice roll
-      const gameStateUpdate = {
-        ...gameState,
-        currentPlayerId: gameState.players[gameState.currentPlayerIndex].playerId,
-        currentPlayerName: gameState.players[gameState.currentPlayerIndex].playerName,
-        gameStatus: gameState.phase === 'finished' ? 'finished' : 'playing',
-        timestamp: Date.now(),
-      };
-
-      logger.info('>>> EMIT: game_state_update (after dice)', { 
-        roomCode,
-        phase: gameState.phase,
-        diceValue: gameState.diceValue,
-        currentPlayer: gameStateUpdate.currentPlayerName
       });
-      socket.to(roomCode).emit('game_state_update', gameStateUpdate);
-      socket.emit('game_state_update', gameStateUpdate);
 
-      if (result.skipTurn) {
-        logger.info('roll_dice: Turn skipped (no valid moves or three 6s)', { 
-          roomCode,
-          playerId,
-          diceValue: result.diceValue
-        });
-      }
-
-      logger.info('<<< RESPONSE: roll_dice SUCCESS', { 
-        socketId: socket.id,
-        roomCode,
+      // Send to the player who rolled
+      socket.emit('dice_rolled', {
         playerId,
         diceValue: result.diceValue,
-        duration: Date.now() - startTime
+        skipTurn: result.skipTurn,
+        timestamp: Date.now(),
       });
+
+      // Always broadcast updated game state after dice roll
+      socket.to(roomCode).emit('game_state_update', {
+        ...gameState,
+        timestamp: Date.now(),
+      });
+
+      socket.emit('game_state_update', {
+        ...gameState,
+        timestamp: Date.now(),
+      });
+
+      if (result.skipTurn) {
+        logger.info(
+          `Turn skipped for player ${playerId} in room ${roomCode} (no valid moves or three 6s)`
+        );
+      }
+
+      logger.info(`Dice rolled: ${result.diceValue} for player ${playerId} in room ${roomCode}`);
     } catch (error) {
       logger.error('Error handling roll_dice:', error);
+      if (callback) callback({ error: 'Failed to roll dice' });
       socket.emit('error', { message: 'Failed to roll dice' });
     }
   });
@@ -160,159 +127,120 @@ export function handleMoveToken(socket: Socket): void {
       playerId: string;
       tokenId: string;
       targetPositionId: string;
-    }) => {
-      const startTime = Date.now();
-      logger.info('>>> INCOMING: move_token', { 
-        socketId: socket.id, 
-        data,
-        timestamp: new Date().toISOString()
-      });
-
+    }, callback?: Function) => {
       try {
+        logger.info(`[MOVE_TOKEN] Event received:`, data);
         const { roomCode, playerId, tokenId, targetPositionId } = data;
+
+        logger.info(
+          `Player ${playerId} moving token ${tokenId} to ${targetPositionId} in room ${roomCode}`
+        );
 
         // Validate input
         if (!roomCode || !playerId || !tokenId || !targetPositionId) {
-          const error = { message: 'Missing required fields' };
-          logger.warn('<<< RESPONSE: move_token FAILED - missing fields', { 
-            socketId: socket.id,
-            error,
-            duration: Date.now() - startTime
-          });
-          socket.emit('error', error);
+          const error = { error: 'Missing required fields' };
+          if (callback) callback(error);
+          socket.emit('error', { message: 'Missing required fields' });
           return;
         }
 
         // Check if player is a spectator
         if (await isSpectator(roomCode, playerId)) {
-          const error = { message: 'Spectators cannot perform game actions' };
-          logger.warn('<<< RESPONSE: move_token FAILED - spectator', { 
-            socketId: socket.id,
-            roomCode,
-            playerId,
-            error,
-            duration: Date.now() - startTime
-          });
-          socket.emit('error', error);
+          const error = { error: 'Spectators cannot perform game actions' };
+          if (callback) callback(error);
+          socket.emit('error', { message: 'Spectators cannot perform game actions' });
+          logger.warn('Spectator attempted to move token', { roomCode, playerId });
           return;
         }
 
         // Move token
-        logger.info('move_token: Calling game service', { roomCode, playerId, tokenId, targetPositionId });
         const result = await gameService.moveToken(roomCode, playerId, tokenId, targetPositionId);
 
         if (!result.success) {
-          const error = { message: result.error };
-          logger.warn('<<< RESPONSE: move_token FAILED', { 
-            socketId: socket.id,
-            roomCode,
-            playerId,
-            tokenId,
-            error,
-            duration: Date.now() - startTime
-          });
-          socket.emit('error', error);
+          const error = { error: result.error };
+          if (callback) callback(error);
+          socket.emit('error', { message: result.error });
           return;
         }
-
-        logger.info('move_token: Token moved successfully', { 
-          roomCode,
-          playerId,
-          tokenId,
-          from: result.result!.fromPosition,
-          to: result.result!.toPosition,
-          captured: result.result!.capturedTokenId,
-          extraTurn: result.result!.extraTurn
-        });
 
         // Get updated game state
         const gameState = await gameService.getGameState(roomCode);
 
         if (!gameState) {
-          const error = { message: 'Game state not found' };
-          logger.error('<<< RESPONSE: move_token ERROR - game state not found', { 
-            socketId: socket.id,
-            roomCode,
-            error,
-            duration: Date.now() - startTime
-          });
-          socket.emit('error', error);
+          const error = { error: 'Game state not found' };
+          if (callback) callback(error);
+          socket.emit('error', { message: 'Game state not found' });
           return;
         }
 
-        const tokenMovedData = {
+        // Send acknowledgment to the client
+        if (callback) {
+          callback({
+            success: true,
+            result: result.result,
+          });
+        }
+
+        // Broadcast token moved event to all players in the room
+        socket.to(roomCode).emit('token_moved', {
           playerId,
           tokenId,
           fromPosition: result.result!.fromPosition,
           toPosition: result.result!.toPosition,
           capturedTokenId: result.result!.capturedTokenId,
           timestamp: Date.now(),
-        };
+        });
 
-        // Broadcast token moved event to all players in the room
-        logger.info('>>> EMIT: token_moved', { roomCode, data: tokenMovedData });
-        socket.to(roomCode).emit('token_moved', tokenMovedData);
-        socket.emit('token_moved', tokenMovedData);
+        // Send to the player who moved
+        socket.emit('token_moved', {
+          playerId,
+          tokenId,
+          fromPosition: result.result!.fromPosition,
+          toPosition: result.result!.toPosition,
+          capturedTokenId: result.result!.capturedTokenId,
+          timestamp: Date.now(),
+        });
 
         // Broadcast updated game state
-        const gameStateUpdate = {
+        socket.to(roomCode).emit('game_state_update', {
           ...gameState,
-          currentPlayerId: gameState.players[gameState.currentPlayerIndex].playerId,
-          currentPlayerName: gameState.players[gameState.currentPlayerIndex].playerName,
-          gameStatus: gameState.phase === 'finished' ? 'finished' : 'playing',
           timestamp: Date.now(),
-        };
-
-        logger.info('>>> EMIT: game_state_update (after move)', { 
-          roomCode,
-          phase: gameState.phase,
-          currentPlayer: gameStateUpdate.currentPlayerName,
-          extraTurn: result.result!.extraTurn
         });
-        socket.to(roomCode).emit('game_state_update', gameStateUpdate);
-        socket.emit('game_state_update', gameStateUpdate);
+
+        socket.emit('game_state_update', {
+          ...gameState,
+          timestamp: Date.now(),
+        });
 
         // Handle turn switching
         if (!result.result!.extraTurn && gameState.phase !== 'finished') {
           // Switch to next player
-          logger.info('move_token: Switching turn', { roomCode, currentPlayer: playerId });
           const updatedGameState = await gameService.switchTurn(roomCode);
 
           if (updatedGameState) {
-            const nextPlayer = updatedGameState.players[updatedGameState.currentPlayerIndex];
-            logger.info('move_token: Turn switched', { 
-              roomCode,
-              nextPlayerId: nextPlayer.playerId,
-              nextPlayerName: nextPlayer.playerName
-            });
-
             // Broadcast turn change
-            const turnChangeUpdate = {
+            socket.to(roomCode).emit('game_state_update', {
               ...updatedGameState,
-              currentPlayerId: nextPlayer.playerId,
-              currentPlayerName: nextPlayer.playerName,
-              gameStatus: updatedGameState.phase === 'finished' ? 'finished' : 'playing',
               timestamp: Date.now(),
-            };
-
-            logger.info('>>> EMIT: game_state_update (turn switch)', { 
-              roomCode,
-              currentPlayer: nextPlayer.playerName
             });
-            socket.to(roomCode).emit('game_state_update', turnChangeUpdate);
-            socket.emit('game_state_update', turnChangeUpdate);
+
+            socket.emit('game_state_update', {
+              ...updatedGameState,
+              timestamp: Date.now(),
+            });
+
+            logger.info(
+              `Turn switched to player ${updatedGameState.players[updatedGameState.currentPlayerIndex].playerId} in room ${roomCode}`
+            );
           }
         }
 
-        logger.info('<<< RESPONSE: move_token SUCCESS', { 
-          socketId: socket.id,
-          roomCode,
-          playerId,
-          tokenId,
-          duration: Date.now() - startTime
-        });
+        logger.info(
+          `Token moved: ${tokenId} from ${result.result!.fromPosition} to ${result.result!.toPosition} in room ${roomCode}`
+        );
       } catch (error) {
         logger.error('Error handling move_token:', error);
+        if (callback) callback({ error: 'Failed to move token' });
         socket.emit('error', { message: 'Failed to move token' });
       }
     }
