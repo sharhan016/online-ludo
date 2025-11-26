@@ -123,16 +123,19 @@ export class GameService {
 
     // Generate random dice value (1-6)
     const diceValue = Math.floor(Math.random() * 6) + 1;
+    logger.info(`[DICE_ROLL] Player ${playerId} (${currentPlayer.color}) rolled: ${diceValue}`);
 
     // Track consecutive sixes
     if (diceValue === 6) {
       gameState.consecutiveSixes++;
+      logger.info(`[DICE_ROLL] Consecutive sixes: ${gameState.consecutiveSixes}`);
     } else {
       gameState.consecutiveSixes = 0;
     }
 
     // Check for three consecutive sixes - skip turn
     if (gameState.consecutiveSixes === 3) {
+      logger.info(`[DICE_ROLL] Three consecutive sixes! Skipping turn for ${playerId}`);
       gameState.consecutiveSixes = 0;
       gameState.diceValue = null;
       gameState.phase = GamePhase.ROLLING;
@@ -148,6 +151,7 @@ export class GameService {
 
     if (!hasValidMoves) {
       // No valid moves, skip turn automatically
+      logger.info(`[DICE_ROLL] No valid moves for ${playerId} with dice value ${diceValue}, skipping turn`);
       gameState.diceValue = null;
       gameState.phase = GamePhase.ROLLING;
       await this.switchTurn(roomCode);
@@ -156,6 +160,7 @@ export class GameService {
     }
 
     // Update game state
+    logger.info(`[DICE_ROLL] Valid moves available, phase changed to MOVING`);
     gameState.diceValue = diceValue;
     gameState.phase = GamePhase.MOVING;
 
@@ -230,8 +235,11 @@ export class GameService {
     const token = playerTokens.find((t) => t.tokenId === tokenId);
 
     if (!token) {
+      logger.warn(`[MOVE_TOKEN] Token not found: ${tokenId} in ${currentPlayer.color} tokens`);
       return { success: false, error: 'Token not found' };
     }
+
+    logger.info(`[MOVE_TOKEN] Moving token ${tokenId} from ${token.positionId} to ${targetPositionId}, diceValue: ${gameState.diceValue}`);
 
     // Validate move
     const moveValidation = canMoveToken(
@@ -241,11 +249,13 @@ export class GameService {
     );
 
     if (!moveValidation.valid) {
+      logger.warn(`[MOVE_TOKEN] Invalid move: ${moveValidation.reason}`);
       return { success: false, error: moveValidation.reason };
     }
 
     // Validate target position matches calculated position
     if (moveValidation.targetPosition !== targetPositionId) {
+      logger.warn(`[MOVE_TOKEN] Target position mismatch: expected ${moveValidation.targetPosition}, got ${targetPositionId}`);
       return { success: false, error: 'Invalid target position' };
     }
 
@@ -253,6 +263,7 @@ export class GameService {
 
     // Update token position
     token.positionId = targetPositionId;
+    logger.info(`[MOVE_TOKEN] Token position updated: ${tokenId} now at ${targetPositionId}`);
 
     // Check for collisions
     const collision = detectCollision(
@@ -265,6 +276,8 @@ export class GameService {
 
     // Handle captured tokens
     if (collision.captured) {
+      logger.info(`[COLLISION] Collision detected at ${targetPositionId}, ${collision.capturedTokens.length} token(s) to capture`);
+      
       for (const capturedToken of collision.capturedTokens) {
         // Find the captured token's color
         for (const [colorKey, tokens] of Object.entries(gameState.tokenPositions)) {
@@ -272,18 +285,26 @@ export class GameService {
           const tokenIndex = tokens.findIndex((t) => t.tokenId === capturedToken.tokenId);
 
           if (tokenIndex !== -1) {
+            const oldPosition = tokens[tokenIndex].positionId;
             // Move captured token back to base
             const basePosition = getBasePosition(capturedToken.tokenId, color);
+            logger.info(`[CAPTURE] Token ${capturedToken.tokenId} (${color}) captured at ${oldPosition}, returning to base: ${basePosition}`);
             tokens[tokenIndex].positionId = basePosition;
             capturedTokenId = capturedToken.tokenId;
             break;
           }
         }
       }
+    } else {
+      logger.info(`[COLLISION] No collision at ${targetPositionId}`);
     }
 
     // Check win condition
     const hasWon = checkWinCondition(currentPlayer.color, playerTokens);
+    
+    if (hasWon) {
+      logger.info(`[WIN] Player ${currentPlayer.playerId} (${currentPlayer.color}) has won!`);
+    }
 
     if (hasWon) {
       // Add to rankings
